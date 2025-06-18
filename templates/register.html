@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Регистрация</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+</head>
+<body>
+    <div class="auth-container registration-form">
+        <h2>Регистрация</h2>
+        <p id="register-error" class="error" style="display:none;"></p>
+
+        <form id="register-step1-form">
+            <div class="form-group">
+                <label for="email">Электронная почта:</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Пароль (мин. 6 символов):</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+             <div class="form-group">
+                <label for="password_confirm">Повторите пароль:</label>
+                <input type="password" id="password_confirm" name="password_confirm" required>
+            </div>
+            <button type="submit" class="btn">Далее</button>
+        </form>
+
+        <form id="register-step2-form" style="display:none;" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="displayName">Имя (будет видно другим):</label>
+                <input type="text" id="displayName" name="displayName" placeholder="Например, Никита" required>
+            </div>
+            <div class="form-group">
+                <label for="customUsername">Ник пользователя (начинается с @):</label>
+                <input type="text" id="customUsername" name="customUsername" placeholder="Пример: @vadim123" required>
+            </div>
+            <div class="form-group">
+                <label for="avatar">Аватар (необязательно):</label>
+                <input type="file" id="avatar" name="avatar" accept="image/*">
+                <small>Если не выбрать, аватар будет с первой буквой имени на розовом фоне.</small>
+            </div>
+            <button type="submit" class="btn btn-register">Зарегистрироваться</button>
+        </form>
+        <p>Уже есть аккаунт? <a href="{{ url_for('login_page') }}">Войти</a></p>
+    </div>
+
+    <script>
+        // ЗАМЕНИТЕ ЭТО ВАШЕЙ РЕАЛЬНОЙ КОНФИГУРАЦИЕЙ FIREBASE!
+        const firebaseConfig = {
+            apiKey: "", // ВАШ КЛЮЧ
+            authDomain: "",    // ВАШ ДОМЕН
+            projectId: "",                     // ВАШ ID ПРОЕКТА
+            storageBucket: "",     // ВАШЕ ХРАНИЛИЩЕ (обратите внимание, тут может быть .appspot.com)
+            messagingSenderId: "",               // ВАШ ID ОТПРАВИТЕЛЯ
+            appId: "", // ВАШ APP ID
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const auth = firebase.auth();
+
+        const step1Form = document.getElementById('register-step1-form');
+        const step2Form = document.getElementById('register-step2-form');
+        const registerErrorElement = document.getElementById('register-error');
+
+        let tempEmail = '';
+        let tempPassword = '';
+        let createdFirebaseUser = null;
+
+        step1Form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            registerErrorElement.style.display = 'none';
+            registerErrorElement.textContent = '';
+
+            tempEmail = step1Form.email.value;
+            tempPassword = step1Form.password.value;
+            const passwordConfirm = step1Form.password_confirm.value;
+
+            if (tempPassword.length < 6) {
+                registerErrorElement.textContent = 'Пароль должен быть не менее 6 символов.';
+                registerErrorElement.style.display = 'block';
+                return;
+            }
+            if (tempPassword !== passwordConfirm) {
+                registerErrorElement.textContent = 'Пароли не совпадают.';
+                registerErrorElement.style.display = 'block';
+                return;
+            }
+
+            step1Form.style.display = 'none';
+            step2Form.style.display = 'block';
+            if (step2Form.displayName) {
+                step2Form.displayName.focus();
+            }
+        });
+
+        step2Form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            registerErrorElement.style.display = 'none';
+            registerErrorElement.textContent = '';
+
+            const displayName = step2Form.displayName.value;
+            const customUsername = step2Form.customUsername.value;
+            const avatarFile = step2Form.avatar.files[0];
+
+            if (!displayName.trim()) {
+                 registerErrorElement.textContent = 'Имя не может быть пустым.';
+                 registerErrorElement.style.display = 'block';
+                 return;
+            }
+            if (!customUsername.startsWith('@') || customUsername.length < 2) {
+                 registerErrorElement.textContent = 'Ник пользователя должен начинаться с @ и содержать хотя бы один символ после @.';
+                 registerErrorElement.style.display = 'block';
+                 return;
+            }
+
+            try {
+                console.log("Шаг 2: Попытка создания пользователя в Firebase Auth...");
+                const userCredential = await auth.createUserWithEmailAndPassword(tempEmail, tempPassword);
+                createdFirebaseUser = userCredential.user;
+                console.log('Пользователь создан в Firebase Auth:', createdFirebaseUser.uid);
+
+                console.log("Шаг 2: Попытка обновления displayName в Firebase Auth...");
+                await createdFirebaseUser.updateProfile({
+                    displayName: displayName
+                });
+                console.log('DisplayName обновлен в Firebase Auth для пользователя:', createdFirebaseUser.uid);
+
+                console.log("Шаг 2: Попытка получения ID токена...");
+                const idToken = await createdFirebaseUser.getIdToken();
+                console.log('ID токен получен:', idToken ? 'Да' : 'Нет');
+
+                const formData = new FormData();
+                formData.append('idToken', idToken);
+                formData.append('displayName', displayName);
+                formData.append('customUsername', customUsername);
+                if (avatarFile) {
+                    formData.append('avatar', avatarFile);
+                }
+                console.log("Шаг 2: Отправка данных на Flask бэкенд...");
+
+                const serverResponse = await fetch("{{ url_for('register_page') }}", {
+                    method: 'POST',
+                    body: formData
+                });
+
+                console.log("Шаг 2: Ответ от Flask бэкенда получен. Статус:", serverResponse.status);
+
+                if (serverResponse.ok) {
+                    let successData;
+                    try {
+                        successData = await serverResponse.json();
+                        console.log("Шаг 2: Успешный ответ от сервера (JSON):", successData);
+                    } catch (jsonError) {
+                        console.error("Шаг 2: Ошибка парсинга JSON ответа сервера:", jsonError);
+                        registerErrorElement.textContent = 'Ошибка ответа сервера (не JSON). Попробуйте снова.';
+                        registerErrorElement.style.display = 'block';
+                        if (createdFirebaseUser) {
+                            await createdFirebaseUser.delete().catch(delError => console.error("Ошибка удаления пользователя Firebase (jsonError):", delError));
+                            createdFirebaseUser = null;
+                        }
+                        step1Form.style.display = 'block';
+                        step2Form.style.display = 'none';
+                        return;
+                    }
+
+                    console.log("Шаг 2: Регистрация на сервере успешна. Сообщение:", successData.message);
+                    const chatUrl = "{{ url_for('chat') }}";
+                    console.log("Шаг 2: Попытка перехода на URL чата:", chatUrl);
+                    if (chatUrl && chatUrl !== "None" && chatUrl !== "null") {
+                        window.location.href = chatUrl;
+                    } else {
+                        console.error("Шаг 2: URL для перехода на чат недействителен!");
+                        registerErrorElement.textContent = 'Ошибка: не удалось определить URL для перехода в чат.';
+                        registerErrorElement.style.display = 'block';
+                    }
+
+                } else {
+                    let errorMsg = 'Ошибка завершения регистрации на сервере.';
+                    try {
+                        const errorData = await serverResponse.json();
+                        errorMsg = errorData.error || errorMsg;
+                        console.error("Шаг 2: Ошибка от Flask бэкенда (JSON):", errorData);
+                    } catch(e) {
+                        const textError = await serverResponse.text();
+                        console.error("Шаг 2: Ошибка от Flask бэкенда (не JSON):", textError);
+                        errorMsg = `Ошибка сервера (статус ${serverResponse.status}). Детали: ${textError.substring(0,100)}`;
+                    }
+                    registerErrorElement.textContent = errorMsg;
+                    registerErrorElement.style.display = 'block';
+
+                    if (createdFirebaseUser) {
+                        console.log("Шаг 2: Попытка удаления пользователя Firebase из-за ошибки сервера...");
+                        await createdFirebaseUser.delete().catch(delError => console.error("Ошибка удаления пользователя Firebase:", delError));
+                        console.log("Пользователь Firebase удален.");
+                        createdFirebaseUser = null;
+                    }
+                    step1Form.style.display = 'block';
+                    step2Form.style.display = 'none';
+                }
+
+            } catch (firebaseAuthError) { 
+                console.error('Ошибка Firebase Auth на шаге 2:', firebaseAuthError);
+                if (firebaseAuthError.code === 'auth/email-already-in-use') {
+                    registerErrorElement.textContent = 'Этот email уже зарегистрирован. Попробуйте войти или используйте другой email.';
+                     step1Form.style.display = 'block';
+                     step2Form.style.display = 'none';
+                     if(step1Form.email) step1Form.email.focus();
+                } else if (firebaseAuthError.code === 'auth/weak-password') {
+                    registerErrorElement.textContent = 'Пароль слишком слабый. Используйте не менее 6 символов.';
+                     step1Form.style.display = 'block';
+                     step2Form.style.display = 'none';
+                     if(step1Form.password) step1Form.password.focus();
+                } else {
+                    registerErrorElement.textContent = firebaseAuthError.message || 'Произошла ошибка регистрации в Firebase.';
+                }
+                registerErrorElement.style.display = 'block';
+                createdFirebaseUser = null;
+            }
+        });
+    </script>
+</body>
+</html>

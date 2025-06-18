@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Чат</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-content">
+                <div class="sidebar-header">
+                    <div class="search-menu-container">
+                        <button id="main-menu-button" class="main-menu-button">☰</button>
+                        <input type="text" id="search-user" placeholder="Поиск...">
+                    </div>
+                    <div id="main-menu-panel" class="main-menu-panel" style="display: none;">
+                        <img src="{{ current_user_avatar_url }}" alt="Аватар" class="menu-avatar" id="menu-user-avatar">
+                        <p class="menu-display-name" id="menu-user-display-name">{{ current_user_display_name }}</p>
+                        <p class="menu-username" style="font-size: 0.8em; color: #6c757d; margin-top: -10px; margin-bottom: 10px;">{{ current_user_username }}</p>
+                        <hr>
+                        <a href="{{ url_for('logout') }}" class="menu-logout">Выйти</a>
+                    </div>
+                    <div class="user-tabs">
+                        <span class="tab-active">Чаты</span>
+                    </div>
+                </div>
+                <div id="chat-list" class="user-list">
+                    </div>
+            </div>
+            <div class="resize-handle" id="resize-handle"></div>
+        </div>
+
+        <div class="chat-area" id="chat-area">
+            <div id="chat-header" class="chat-header-bar" style="display: none;">
+                <button id="back-to-chat-list-button" class="back-button-mobile" title="Назад к списку чатов">
+                    <img src="{{ url_for('static', filename='img_cora/back_arrow.png') }}" alt="Назад">
+                </button>
+                <img src="{{ DEFAULT_AVATAR_URL }}" alt="Аватар партнера" id="chat-partner-avatar" class="chat-header-avatar">
+                <span id="chat-with-info" class="chat-header-name"></span>
+            </div>
+            <div id="messages-container" class="messages-container">
+                 <p id="select-chat-prompt">Выберите чат для начала общения или найдите нового собеседника.</p>
+            </div>
+            <div id="message-input-area" class="message-input-area" style="display: none;">
+                <input type="text" id="message-input" placeholder="Введите сообщение...">
+                <button id="send-button" class="send-button-image" title="Отправить">
+                    <img src="{{ url_for('static', filename='img_cora/send_icon.png') }}" alt="Отправить">
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Данные текущего пользователя, передаваемые из Flask (app.py)
+        const currentUsername = "{{ current_user_username }}"; // Это ваш @customUsername
+        const currentUserUid = "{{ current_user_uid }}";     // Это Firebase UID
+        const currentUserDisplayNameFromFlask = "{{ current_user_display_name }}";
+        const currentUserAvatarUrlFromFlask = "{{ current_user_avatar_url }}";
+        const defaultAvatarUrlGlobal = "{{ DEFAULT_AVATAR_URL }}"; // Глобальный дефолтный аватар
+
+        // ЗАМЕНИТЕ ЭТО ВАШЕЙ РЕАЛЬНОЙ КОНФИГУРАЦИЕЙ FIREBASE!
+        const firebaseConfig = {
+            apiKey: "", // ВАШ КЛЮЧ
+            authDomain: "",    // ВАШ ДОМЕН
+            projectId: "",                     // ВАШ ID ПРОЕКТА
+            storageBucket: "",     // ВАШЕ ХРАНИЛИЩЕ (обратите внимание, тут может быть .appspot.com)
+            messagingSenderId: "",               // ВАШ ID ОТПРАВИТЕЛЯ
+            appId: "", // ВАШ APP ID
+        };
+
+        // Инициализация Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const fbAuth = firebase.auth(); // Используем fbAuth
+
+        fbAuth.onAuthStateChanged(user => {
+            if (user) {
+                console.log("Firebase auth state: user signed in on chat page.", user.uid);
+                if (currentUserUid !== user.uid) {
+                    console.warn("Mismatch between Flask session UID (", currentUserUid, ") and Firebase Auth UID (", user.uid, "). Logging out.");
+                    window.location.href = "{{ url_for('logout') }}";
+                }
+                // Обновляем данные в меню, если они изменились в Firebase Auth
+                const menuUserAvatar = document.getElementById('menu-user-avatar');
+                const menuUserDisplayName = document.getElementById('menu-user-display-name');
+
+                if (user.displayName && menuUserDisplayName && user.displayName !== currentUserDisplayNameFromFlask) {
+                    menuUserDisplayName.textContent = user.displayName;
+                }
+                // photoURL из Firebase Auth обычно используется, если аватары хранятся в Firebase Storage
+                // В нашем случае get_user_avatar_url в app.py формирует URL, который уже в currentUserAvatarUrlFromFlask
+                // if (user.photoURL && menuUserAvatar && user.photoURL !== currentUserAvatarUrlFromFlask) {
+                // menuUserAvatar.src = user.photoURL;
+                // }
+            } else {
+                console.log("Firebase auth state: user signed out on chat page.");
+                if (currentUserUid) {
+                    console.log("Redirecting to logout due to Firebase user being signed out.");
+                    window.location.href = "{{ url_for('logout') }}";
+                }
+            }
+        });
+    </script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

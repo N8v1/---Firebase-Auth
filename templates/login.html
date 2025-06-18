@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+</head>
+<body>
+    <div class="auth-container">
+        <h2>Вход</h2>
+        <p id="login-error" class="error" style="display:none;"></p>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="email">Электронная почта:</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Пароль:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit" class="btn">Вход</button>
+        </form>
+        <p>Нет аккаунта? <a href="{{ url_for('register_page') }}">Зарегистрироваться</a></p>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "", // ВАШ КЛЮЧ
+            authDomain: "",    // ВАШ ДОМЕН
+            projectId: "",                     // ВАШ ID ПРОЕКТА
+            storageBucket: "",     // ВАШЕ ХРАНИЛИЩЕ (обратите внимание, тут может быть .appspot.com)
+            messagingSenderId: "",               // ВАШ ID ОТПРАВИТЕЛЯ
+            appId: "", // ВАШ APP ID
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const auth = firebase.auth();
+
+        const loginForm = document.getElementById('login-form');
+        const loginErrorElement = document.getElementById('login-error');
+
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                console.log("Форма входа отправлена.");
+
+                const email = loginForm.email.value;
+                const password = loginForm.password.value;
+
+                if (loginErrorElement) {
+                    loginErrorElement.style.display = 'none';
+                    loginErrorElement.textContent = '';
+                }
+
+                try {
+                    console.log("Попытка входа через Firebase Auth с email:", email);
+                    const userCredential = await auth.signInWithEmailAndPassword(email, password);
+                    const user = userCredential.user;
+                    console.log('Пользователь Firebase успешно вошел:', user.uid);
+
+                    console.log("Попытка получения ID токена...");
+                    const idToken = await user.getIdToken();
+                    console.log('ID токен получен:', idToken ? 'Да' : 'Нет, что странно');
+
+                    if (!idToken) {
+                        console.error("ID токен не был получен от Firebase!");
+                        if (loginErrorElement) {
+                            loginErrorElement.textContent = 'Не удалось получить токен аутентификации. Попробуйте снова.';
+                            loginErrorElement.style.display = 'block';
+                        }
+                        return;
+                    }
+
+                    console.log("Отправка ID токена на Flask бэкенд (/login)...");
+                    const serverResponse = await fetch("{{ url_for('login_page') }}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: new URLSearchParams({
+                            'idToken': idToken
+                        })
+                    });
+
+                    console.log("Ответ от Flask бэкенда получен. Статус:", serverResponse.status);
+
+                    if (serverResponse.ok) {
+                        const contentType = serverResponse.headers.get("content-type");
+                        if (contentType && contentType.indexOf("application/json") !== -1) {
+                            const successData = await serverResponse.json();
+                            console.log("Успешный JSON ответ от сервера (хотя ожидался редирект):", successData);
+                        } else {
+                            console.log("Сервер ответил успешно (вероятно, редирект). Текущий URL:", window.location.href);
+                             if (window.location.pathname.endsWith("/login")) {
+                                 console.log("Попытка принудительного перехода на /chat");
+                                 window.location.href = "{{ url_for('chat') }}";
+                             }
+                        }
+                    } else {
+                        let errorMsg = 'Ошибка создания сессии на сервере.';
+                        try {
+                            const errorData = await serverResponse.json();
+                            errorMsg = errorData.error || errorMsg;
+                            console.error("Ошибка от Flask бэкенда (JSON):", errorData);
+                        } catch (e) {
+                            const textError = await serverResponse.text();
+                            console.error("Ошибка от Flask бэкенда (не JSON):", textError);
+                            errorMsg = `Ошибка сервера (статус ${serverResponse.status}).`;
+                        }
+                        if (loginErrorElement) {
+                            loginErrorElement.textContent = errorMsg;
+                            loginErrorElement.style.display = 'block';
+                        }
+                        auth.signOut().catch(err => console.error("Firebase signout error after server error:", err));
+                    }
+
+                } catch (firebaseAuthError) {
+                    console.error('Ошибка входа через Firebase Auth:', firebaseAuthError);
+                    if (loginErrorElement) {
+                        if (firebaseAuthError.code === 'auth/user-not-found' || firebaseAuthError.code === 'auth/wrong-password' || firebaseAuthError.code === 'auth/invalid-credential') {
+                            loginErrorElement.textContent = 'Неверный email или пароль.';
+                        } else if (firebaseAuthError.code === 'auth/invalid-email') {
+                            loginErrorElement.textContent = 'Неверный формат email.';
+                        }
+                        else {
+                            loginErrorElement.textContent = 'Произошла ошибка входа. Попробуйте снова.';
+                        }
+                        loginErrorElement.style.display = 'block';
+                    }
+                }
+            });
+        } else {
+            console.error("Форма входа #login-form не найдена!");
+        }
+    </script>
+</body>
+</html>
